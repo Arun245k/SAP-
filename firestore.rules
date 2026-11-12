@@ -20,7 +20,7 @@ service cloud.firestore {
       return data.keys().hasAll(['email']) &&
              data.keys().hasOnly(['email', 'name', 'createdAt']) &&
              data.email is string && data.email.size() > 0 && data.email.size() <= 200 &&
-             (!('name' in data) || (data.name is string && data.name.size() <= 200)) &&
+             (!('name' in data) || data.name == null || (data.name is string && data.name.size() <= 200)) &&
              (!('createdAt' in data) || data.createdAt is number);
     }
 
