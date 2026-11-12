@@ -248,7 +248,7 @@ The JSON must adhere strictly to this schema:
     "shortText": "Detailed string explaining the symptom or reason"
   }
 ]
-Output ONLY a valid JSON array. Return 3 to 5 notes only when each note is verified with high confidence; otherwise return an empty array. Never pad results with unverified or plausible-looking notes.`;
+Output ONLY a valid JSON array. Return only notes supported by retrieved source evidence. Return an empty array when no notes can be verified; never pad results to reach a minimum count and never invent SAP Note/KBA IDs, titles, dates, or statuses.`;
 
 // Health check endpoint
 app.get('/api/health', (_req: Request, res: Response) => {
