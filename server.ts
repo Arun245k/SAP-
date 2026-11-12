@@ -248,7 +248,7 @@ The JSON must adhere strictly to this schema:
     "shortText": "Detailed string explaining the symptom or reason"
   }
 ]
-Output ONLY the JSON array of exactly 3 to 5 highly relevant notes.`;
+Output ONLY a valid JSON array. Return 3 to 5 notes only when each note is verified with high confidence; otherwise return an empty array. Never pad results with unverified or plausible-looking notes.`;
 
 // Health check endpoint
 app.get('/api/health', (_req: Request, res: Response) => {
