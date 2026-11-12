@@ -23,14 +23,14 @@ jobs:
       - name: Install dependencies from bun.lock
         run: bun install --frozen-lockfile
 
+      - name: Install Firestore test tooling
+        run: bun add --no-save firebase @firebase/rules-unit-testing firebase-tools
+
       - name: TypeScript validation
         run: bun run lint
 
       - name: Production build
         run: bun run build
-
-      - name: Install Firestore test tooling
-        run: bun add --no-save firebase @firebase/rules-unit-testing firebase-tools
 
       - name: Test Firestore rules in emulator
         run: bunx firebase emulators:exec --only firestore "bun test tests/firestore.rules.test.ts"
