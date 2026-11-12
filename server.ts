@@ -742,8 +742,20 @@ server.on('upgrade', (request, socket, head) => {
     return;
   }
   const origin = request.headers.origin;
-  const expectedOrigin = `${requestUrl.protocol === 'https:' ? 'https' : 'http'}://${request.headers.host}`;
-  if (requestUrl.pathname !== '/api/live' || !origin || origin !== expectedOrigin) {
+  let originUrl: URL | null = null;
+  try {
+    originUrl = origin ? new URL(origin) : null;
+  } catch {
+    originUrl = null;
+  }
+  const forwardedProto = request.headers['x-forwarded-proto'];
+  const expectedProtocol = (Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto)?.split(',')[0]?.trim() || 'http';
+  if (
+    requestUrl.pathname !== '/api/live' ||
+    !originUrl ||
+    originUrl.host !== request.headers.host ||
+    originUrl.protocol !== `${expectedProtocol}:`
+  ) {
     socket.write('HTTP/1.1 403 Forbidden\\r\\n\\r\\n');
     socket.destroy();
     return;
