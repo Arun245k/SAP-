@@ -756,7 +756,7 @@ server.on('upgrade', (request, socket, head) => {
     originUrl.host !== request.headers.host ||
     originUrl.protocol !== `${expectedProtocol}:`
   ) {
-    socket.write('HTTP/1.1 403 Forbidden\\r\\n\\r\\n');
+    socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
     socket.destroy();
     return;
   }
