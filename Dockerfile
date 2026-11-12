@@ -22,4 +22,5 @@ ENV DISABLE_HMR=true
 
 EXPOSE 10000
 
-CMD ["bun", "run", "start"]
+# Bun runs TypeScript directly; avoid routing through tsx in the runtime image.
+CMD ["bun", "run", "server.ts"]
