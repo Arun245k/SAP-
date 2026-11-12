@@ -17,31 +17,45 @@ service cloud.firestore {
     function existing() { return resource.data; }
 
     function isValidUser(data) {
-      return data.keys().hasAll(['email']) && data.email is string && data.email.size() > 0 && data.email.size() <= 200;
+      return data.keys().hasAll(['email']) &&
+             data.keys().hasOnly(['email', 'name', 'createdAt']) &&
+             data.email is string && data.email.size() > 0 && data.email.size() <= 200 &&
+             (!('name' in data) || (data.name is string && data.name.size() <= 200)) &&
+             (!('createdAt' in data) || data.createdAt is number);
     }
 
     function isValidIncident(data) {
-      return data.keys().hasAll(['title', 'problem', 'analysis', 'userId']) &&
+      return data.keys().hasAll(['title', 'problem', 'analysis', 'userId', 'timestamp']) &&
+             data.keys().hasOnly(['id', 'title', 'problem', 'analysis', 'timestamp', 'rootCause', 'resolutionSteps', 'userId', 'archivedAt']) &&
              data.userId == request.auth.uid &&
-             data.title is string && data.title.size() <= 500 &&
-             data.problem is string && data.problem.size() <= 5000 &&
-             data.analysis is string && data.analysis.size() <= 20000;
+             data.title is string && data.title.size() > 0 && data.title.size() <= 500 &&
+             data.problem is string && data.problem.size() > 0 && data.problem.size() <= 5000 &&
+             data.analysis is string && data.analysis.size() > 0 && data.analysis.size() <= 20000 &&
+             data.timestamp is number &&
+             (!('id' in data) || (data.id is string && data.id.size() <= 100)) &&
+             (!('rootCause' in data) || (data.rootCause is string && data.rootCause.size() <= 2000)) &&
+             (!('resolutionSteps' in data) || (data.resolutionSteps is string && data.resolutionSteps.size() <= 2000));
     }
 
     function isValidTelemetry(data) {
-      return data.keys().hasAll(['userId', 'timestamp', 'latencyMs', 'queryType', 'status']) &&
+      return data.keys().hasAll(['userId', 'timestamp', 'latencyMs', 'queryType', 'queryLength', 'responseLength', 'status']) &&
+             data.keys().hasOnly(['userId', 'timestamp', 'latencyMs', 'queryType', 'queryLength', 'responseLength', 'status']) &&
              data.userId == request.auth.uid &&
-             data.latencyMs is number &&
+             data.latencyMs is number && data.latencyMs >= 0 && data.latencyMs <= 3600000 &&
              data.timestamp is number &&
-             data.queryType is string && data.queryType.size() <= 100 &&
-             data.status is string && data.status.size() <= 50;
+             data.queryType is string && data.queryType.size() > 0 && data.queryType.size() <= 100 &&
+             data.queryLength is number && data.queryLength >= 0 && data.queryLength <= 20000 &&
+             data.responseLength is number && data.responseLength >= 0 && data.responseLength <= 100000 &&
+             data.status in ['SUCCESS', 'FAILURE'];
     }
 
     match /users/{userId} {
       allow get: if isOwner(userId);
-      allow list: if isOwner(userId) && resource.data.id == request.auth.uid; // This logic enforces list, though id might not exist here. better to use get.
+      // User documents are addressed directly by UID; collection listing is not needed.
       allow create: if isOwner(userId) && isValidUser(incoming());
-      allow update: if isOwner(userId) && isValidUser(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['email', 'name']);
+      allow update: if isOwner(userId) &&
+                    isValidUser(incoming()) &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['email', 'name']);
       allow delete: if false;
     }
 
