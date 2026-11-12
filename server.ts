@@ -1,4 +1,4 @@
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
@@ -10,9 +10,68 @@ dotenv.config();
 const app = express();
 const server = createServer(app);
 
-// Increase JSON body payload limit for high-res screenshot attachments & diagnostic frames
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+// Keep request bodies bounded: large base64 payloads otherwise make this public AI API an easy DoS target.
+app.use(express.json({ limit: '12mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+
+// In-memory fixed-window limiter. Use a shared store (for example Redis) when running
+// multiple server instances so limits are consistent across replicas.
+function createRateLimiter(maxRequests: number, windowMs: number) {
+  const buckets = new Map<string, { count: number; resetAt: number }>();
+  return (req: Request, res: Response, next: NextFunction) => {
+    const key = req.ip || req.socket.remoteAddress || 'unknown';
+    const now = Date.now();
+    let bucket = buckets.get(key);
+    if (!bucket || bucket.resetAt <= now) {
+      bucket = { count: 0, resetAt: now + windowMs };
+      buckets.set(key, bucket);
+    }
+    bucket.count += 1;
+    res.setHeader('RateLimit-Limit', String(maxRequests));
+    res.setHeader('RateLimit-Remaining', String(Math.max(0, maxRequests - bucket.count)));
+    res.setHeader('RateLimit-Reset', String(Math.ceil(bucket.resetAt / 1000)));
+    if (bucket.count > maxRequests) {
+      res.setHeader('Retry-After', String(Math.ceil((bucket.resetAt - now) / 1000)));
+      return res.status(429).json({ error: 'Too many AI requests. Please wait before trying again.' });
+    }
+    // Periodically discard expired buckets to prevent unbounded growth.
+    if (buckets.size > 5000) {
+      for (const [bucketKey, value] of buckets) {
+        if (value.resetAt <= now) buckets.delete(bucketKey);
+      }
+    }
+    next();
+  };
+}
+
+function validateAiPayload(req: Request, res: Response, next: NextFunction) {
+  const body = req.body ?? {};
+  for (const [key, value] of Object.entries(body)) {
+    if (typeof value === 'string' && value.length > 20000) {
+      return res.status(413).json({ error: `The ${key} field is too large (maximum 20,000 characters).` });
+    }
+  }
+  if (body.prompt !== undefined && typeof body.prompt !== 'string') {
+    return res.status(400).json({ error: 'Prompt must be a string.' });
+  }
+  if (body.attachments !== undefined) {
+    if (!Array.isArray(body.attachments) || body.attachments.length > 5) {
+      return res.status(400).json({ error: 'Provide no more than five attachments.' });
+    }
+    const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
+    for (const attachment of body.attachments) {
+      if (!attachment || !allowedTypes.has(attachment.type) || typeof attachment.data !== 'string' || attachment.data.length > 8_000_000) {
+        return res.status(400).json({ error: 'An attachment is invalid, unsupported, or too large.' });
+      }
+    }
+  }
+  if (body.chartData !== undefined && JSON.stringify(body.chartData).length > 100_000) {
+    return res.status(413).json({ error: 'Chart data exceeds the 100 KB limit.' });
+  }
+  next();
+}
+
+app.use('/api/gemini', createRateLimiter(12, 60_000), validateAiPayload);
 
 // Shared Server-Side GoogleGenAI Client initialized with process.env.GEMINI_API_KEY
 const ai = new GoogleGenAI({
@@ -174,7 +233,7 @@ If an image is attached, apply advanced neural Vision matrices first to visually
 
 const SEARCH_SYSTEM_PROMPT = `You are a SAP OSS Note Search Engine powered by NEXUS OS CORE. 
 When given a user problem, error code, or scenario, you must identify and generate the most relevant SAP OSS notes that address the problem. 
-You can provide real known notes or generate highly realistic plausible notes for the scenario.
+Never invent, fabricate, or guess SAP Note/KBA numbers, titles, dates, or release status. Only return a note when you have high confidence that the exact identifier and title are real. If the evidence is insufficient, return an empty array rather than plausible-looking data.
 You MUST output EXACTLY a valid JSON array of objects.
 The JSON must adhere strictly to this schema:
 [
@@ -189,14 +248,13 @@ The JSON must adhere strictly to this schema:
     "shortText": "Detailed string explaining the symptom or reason"
   }
 ]
-Output ONLY the JSON array of exactly 3 to 5 highly relevant notes.`;
+Output ONLY a valid JSON array. Return only notes supported by retrieved source evidence. Return an empty array when no notes can be verified; never pad results to reach a minimum count and never invent SAP Note/KBA IDs, titles, dates, or statuses.`;
 
 // Health check endpoint
 app.get('/api/health', (_req: Request, res: Response) => {
   res.json({
     status: 'ok',
     service: 'NEXUS SCM 2100 Server',
-    hasApiKey: Boolean(process.env.GEMINI_API_KEY),
     timestamp: new Date().toISOString(),
   });
 });
@@ -602,7 +660,7 @@ Search and synthesize verified solutions, SPRO customizing paths, transaction co
 });
 
 // Setup WebSocket Server for Live API voice & real-time streaming
-const wss = new WebSocketServer({ noServer: true });
+const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
 
 wss.on('connection', async (clientWs: WebSocket) => {
   console.log('Client connected to Live API WebSocket');
@@ -676,12 +734,35 @@ wss.on('connection', async (clientWs: WebSocket) => {
 
 // Handle WebSocket upgrade on /api/live
 server.on('upgrade', (request, socket, head) => {
-  const url = new URL(request.url || '', `http://${request.headers.host}`);
-  if (url.pathname === '/api/live') {
-    wss.handleUpgrade(request, socket, head, (ws) => {
-      wss.emit('connection', ws, request);
-    });
+  let requestUrl: URL;
+  try {
+    requestUrl = new URL(request.url || '', `http://${request.headers.host}`);
+  } catch {
+    socket.destroy();
+    return;
   }
+  const origin = request.headers.origin;
+  let originUrl: URL | null = null;
+  try {
+    originUrl = origin ? new URL(origin) : null;
+  } catch {
+    originUrl = null;
+  }
+  const forwardedProto = request.headers['x-forwarded-proto'];
+  const expectedProtocol = (Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto)?.split(',')[0]?.trim() || 'http';
+  if (
+    requestUrl.pathname !== '/api/live' ||
+    !originUrl ||
+    originUrl.host !== request.headers.host ||
+    originUrl.protocol !== `${expectedProtocol}:`
+  ) {
+    socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+  wss.handleUpgrade(request, socket, head, (ws) => {
+    wss.emit('connection', ws, request);
+  });
 });
 
 // Configure Vite middleware in development or static serving in production
