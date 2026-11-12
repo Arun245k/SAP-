@@ -36,7 +36,7 @@ jobs:
         run: bunx firebase emulators:exec --only firestore "node --test tests/firestore.rules.test.mjs"
 
       - name: Smoke test Render staging health endpoint
-        if: github.event_name == 'push' && github.ref == 'refs/heads/review/security-hardening'
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/review/security-hardening') || (github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'review/security-hardening')
         env:
           STAGING_URL: https://sap-staging.onrender.com
         run: |
