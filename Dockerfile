@@ -2,7 +2,7 @@
 # The frontend Firebase config is replaced with a non-routable placeholder
 # so this staging deployment cannot read or write to the Firebase project
 # configured in the source repository.
-FROM oven/bun:1.3.5
+FROM oven/bun:1.4.0
 
 WORKDIR /app
 
