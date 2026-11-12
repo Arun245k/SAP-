@@ -1,0 +1,10 @@
+{
+  "name": "SAP AI Operations Copilot",
+  "description": "Enterprise-grade SAP AI Assistant platform for identifying, analyzing, and resolving SAP operational issues.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

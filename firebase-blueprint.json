@@ -1,0 +1,73 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile data",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        }
+      },
+      "required": ["email"]
+    },
+    "Incident": {
+      "title": "Incident",
+      "description": "Historical search results or analyses",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "problem": { "type": "string" },
+        "analysis": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "rootCause": { "type": "string" },
+        "resolutionSteps": { "type": "string" },
+        "userId": { "type": "string" }
+      },
+      "required": ["title", "problem", "analysis", "userId"]
+    },
+    "Telemetry": {
+      "title": "Telemetry",
+      "description": "API response latency logs for SAP queries",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "latencyMs": { "type": "number" },
+        "queryType": { "type": "string" },
+        "queryLength": { "type": "number" },
+        "responseLength": { "type": "number" },
+        "status": { "type": "string" }
+      },
+      "required": ["userId", "timestamp", "latencyMs", "queryType", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/User"
+      },
+      "description": "Stores user profiles"
+    },
+    "/archives/{archiveId}": {
+      "schema": {
+        "$ref": "#/entities/Incident"
+      },
+      "description": "Stores user archived search history"
+    },
+    "/telemetry/{telemetryId}": {
+      "schema": {
+        "$ref": "#/entities/Telemetry"
+      },
+      "description": "Stores performance latency telemetry records"
+    }
+  }
+}
