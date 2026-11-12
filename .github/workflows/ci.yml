@@ -33,4 +33,4 @@ jobs:
         run: bun run build
 
       - name: Test Firestore rules in emulator
-        run: bunx firebase emulators:exec --only firestore "bun test tests/firestore.rules.test.ts"
+        run: bunx firebase emulators:exec --only firestore "node --test tests/firestore.rules.test.mjs"
